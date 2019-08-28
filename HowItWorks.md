@@ -3,7 +3,7 @@
 Dex CFG -> SSA IR -> Type Inference -> Out-Of-SSA & CodeGen
 ```
 ## 构建Dex code的CFG
-这步主要使用androguard完成,但是androguard生成的CFG并不能直接使用,考虑下面代码
+这步使用[androguard](https://github.com/androguard/androguard)完成,但是androguard生成的CFG并不能直接使用,考虑下面代码
 ```
 v1 = ...;
 v0_0 = 0;
@@ -24,7 +24,7 @@ try {
 //BB5
 bar(v0_4); //"sss"
 ```
-最后一行中v0的值必定是"sss",但如果直接在androiguard的CFG上构建SSA IR, v0_1, v0_2的值通过catch块传播的phi传播到bar,导致bar读取到值不正确.
+最后一行中v0的值必定是"sss",但如果直接在androiguard的CFG上构建SSA IR, v0_1, v0_2的值通过catch块的phi传播到bar,导致bar读取到值不正确.
 所以首先要对androguard生成的CFG进行改造:
 + 将会抛出异常的指令放到独立的基本块内
 + 对于不会抛出异常的基本块,不能给它添加catch后继
@@ -48,7 +48,12 @@ bar(v0_4); //"sss"
 PHI消除使用的是\<\<Translating out of static single assignment form\>\>论文中的方法,即将TSSA转成CSSA,然后给PHI相关变量分配相同名字来消除PHI.
 
 ## 局部引用缓存和释放
-当前实现会在函数作用域内,缓存解析的jclass, jmethodID, jfieldID.在每个函数中,他们都只会在首次使用时解析一次.
+当前使用全局和局部两级缓存策略缓存jclass, jmethodID, jfieldID解析结果.
+全局缓存jclass会消耗全局引用(全局引用表也会溢出).
+整个解析过程如下:
+1. 查看当前函数是否已有缓存,如果已经缓存则可直接使用.
+2. 局部没有缓存时,查看全局是否缓存,如有缓存,缓存结果到局部变量并返回结果.
+3. 全局仍没有缓存时,请求Java虚拟机解析,缓存结果到全局和局部并返回结果.
 
 为了避免局部引用表溢出(local reference table overflow),我们需要在引用不再被使用或没有使用时将其释放.
 我能想到的判断方法有两种:
